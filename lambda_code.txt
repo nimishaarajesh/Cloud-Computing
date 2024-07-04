@@ -1,0 +1,78 @@
+import math
+import random
+import yfinance as yf
+import pandas as pd
+from datetime import date, timedelta
+from pandas_datareader import data as pdr
+
+
+#Referred this code from the give coursework guide 
+def retrieve_trading_signals(event, context):
+    # Set the finance data source to Yahoo Finance
+    yf.pdr_override()
+
+    # Define the timeframe for the stock data retrieval
+    present_day = date.today()
+    past_date = present_day - timedelta(days=3650)  # Approx. 10 years back
+
+    # Retrieve historical data for Google from Yahoo Finance
+    historical_data = pdr.get_data_yahoo('GOOG', start=past_date, end=present_day)
+
+    # Initialize columns for Buy and Sell signals in the DataFrame
+    historical_data['Buy'] = 0
+    historical_data['Sell'] = 0
+
+    # Define the minimum price movement for signal detection
+    price_movement_threshold = 0.01
+
+    for i in range(2, len(historical_data)):
+        # Identify bullish patterns - "Three Soldiers"
+        if (historical_data.Close[i] - historical_data.Open[i]) >= price_movement_threshold and \
+           historical_data.Close[i] > historical_data.Close[i-1] > historical_data.Close[i-2] and \
+           (historical_data.Close[i-1] - historical_data.Open[i-1]) >= price_movement_threshold and \
+           (historical_data.Close[i-2] - historical_data.Open[i-2]) >= price_movement_threshold:
+            historical_data.at[historical_data.index[i], 'Buy'] = 1
+
+        # Identify bearish patterns - "Three Crows"
+        if (historical_data.Open[i] - historical_data.Close[i]) >= price_movement_threshold and \
+           historical_data.Close[i] < historical_data.Close[i-1] < historical_data.Close[i-2] and \
+           (historical_data.Open[i-1] - historical_data.Close[i-1]) >= price_movement_threshold and \
+           (historical_data.Open[i-2] - historical_data.Close[i-2]) >= price_movement_threshold:
+            historical_data.at[historical_data.index[i], 'Sell'] = 1
+
+    # Variables from event for analysis
+    min_days_history = int(event["minhistory"])
+    number_of_simulations = int(event["shots"])
+    signal_type = int(event["bs"])  # Buy=1, Sell=0
+    prediction_period = int(event["profit_loss_days"])
+    prediction_period = min(prediction_period, len(historical_data) - min_days_history)
+
+    results = []
+
+
+    # Referred to this part of code from different guides and statistical website for formula
+    # Analyze potential trading outcomes based on historical patterns
+    for i in range(min_days_history, len(historical_data) - prediction_period):
+        if (signal_type == 1 and historical_data.Buy[i] == 1) or \
+           (signal_type == 0 and historical_data.Sell[i] == 1):
+            average_return = historical_data.Close[i-min_days_history:i].pct_change().mean()
+            standard_dev = historical_data.Close[i-min_days_history:i].pct_change().std()
+
+            # Simulate potential future returns
+            simulated_outcomes = [random.gauss(average_return, standard_dev) for _ in range(number_of_simulations)]
+            simulated_outcomes.sort(reverse=True)
+
+            # Determine risk thresholds
+            risk_95 = simulated_outcomes[int(len(simulated_outcomes) * 0.95)]
+            risk_99 = simulated_outcomes[int(len(simulated_outcomes) * 0.99)]
+
+            # Compute potential profit or loss after the forecast period
+            profit_or_loss = historical_data.Close[i + prediction_period] - historical_data.Close[i]
+            results.append({
+                "95%": risk_95,
+                "99%": risk_99,
+                "date": historical_data.index[i].strftime('%Y-%m-%d'),
+                "Profit/Loss": profit_or_loss
+            })
+
+    return {"data": results}

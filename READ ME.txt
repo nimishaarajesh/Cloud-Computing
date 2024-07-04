@@ -1,0 +1,11 @@
+APP.YAML    :  configuration file for deploying a Python application on a cloud platform
+
+CCDATA.JSON  : Output stored at S3
+
+EC2_LAMBDA_CODE   :  Contains EC2 lambda function 
+
+INDEX.PY    :  Python files which contains all endpoints
+
+LAMBDA     :  Contains Lambda function
+
+Requirements   : Contains the set of Python library dependencies
